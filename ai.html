@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI聊天</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif;}
+.hide {display:none !important;}
+body {
+    max-width:1000px;
+    margin:16px auto;
+    padding:0 12px;
+    background:#f4f7fa;
+}
+.header-bar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:#fff;
+    padding:12px 16px;
+    border-radius:12px;
+    box-shadow:0 2px 8px #00000010;
+    margin-bottom:12px;
+}
+.model-select-wrap{
+    display:flex;
+    gap:8px;
+    align-items:center;
+}
+#modelSelect {
+    padding:8px 10px;
+    border:1px solid #dde1e8;
+    border-radius:8px;
+    background:#fff;
+    outline:none;
+}
+button{
+    padding:8px 14px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    transition:0.2s;
+}
+button:hover{opacity:0.9;}
+.btn-primary{background:#2563eb;color:#fff;}
+.btn-danger{background:#ef4444;color:#fff;}
+#history {
+    height:600px;
+    background:#fff;
+    border-radius:12px;
+    padding:16px;
+    overflow-y:auto;
+    box-shadow:0 2px 8px #00000010;
+    margin-bottom:12px;
+}
+.msg {
+    margin:10px 0;
+    max-width:75%;
+    padding:10px 14px;
+    border-radius:12px;
+    white-space:pre-wrap;
+    line-height:1.5;
+    word-break:break-word;
+}
+.user {
+    margin-left:auto;
+    background:#2563eb;
+    color:#fff;
+    border-bottom-right-radius:4px;
+}
+.ai {
+    margin-right:auto;
+    background:#f0f2f5;
+    color:#1f2937;
+    border-bottom-left-radius:4px;
+}
+.err {
+    margin-right:auto;
+    background:#fee2e2;
+    color:#b91c1c;
+    border-bottom-left-radius:4px;
+}
+.loading-msg {
+    margin-right:auto;
+    background:#f0f2f5;
+    color:#4b5563;
+    border-bottom-left-radius:4px;
+}
+.input-area {
+    display:flex;
+    gap:10px;
+    align-items:flex-end;
+}
+#txt {
+    flex:1;
+    min-height:44px;
+    max-height:140px;
+    padding:10px 14px;
+    border:1px solid #dde1e8;
+    border-radius:12px;
+    outline:none;
+    resize:none;
+    font-size:1rem;
+}
+#txt:focus{border-color:#2563eb;}
+/* 密钥弹窗 */
+#keyModal {
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.4);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:99;
+}
+/*过期弹窗，和密钥弹窗完全一样居中灰幕*/
+#expireModal {
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.4);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:99;
+}
+.modal-box {
+    background:white;
+    padding:24px;
+    border-radius:14px;
+    width:min(420px,90%);
+    box-shadow:0 4px 20px #00000020;
+}
+.modal-box h3{margin-bottom:16px;color:#1f2937;}
+#keyInput {
+    width:100%;
+    padding:10px;
+    border:1px solid #dde1e8;
+    border-radius:8px;
+    margin:10px 0 16px;
+    outline:none;
+}
+/*时间炸弹右下角提示*/
+.expire-tip{
+    position:fixed;right:12px;bottom:12px;background:#00000070;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;line-height:1.4;z-index:10;
+}
+</style>
+</head>
+<body>
+<div id="keyModal" class="hide">
+    <div class="modal-box">
+        <h3>输入Token</h3>
+        <input id="keyInput" placeholder="粘贴token">
+        <br>
+        <button class="btn-primary" onclick="saveKey()">确认</button>
+    </div>
+</div>
+<!--过期弹窗，样式完全对齐密钥弹窗，居中+全屏灰色遮罩-->
+<div id="expireModal" class="hide">
+    <div class="modal-box">
+        <h3>版本已过期</h3>
+        <p>当前版本已到期，请获取新版本继续对话。</p>
+        <br>
+        <button class="btn-primary" onclick="gotoDownload()">去官网下载最新版本</button>
+        <button class="btn-danger" onclick="closeExpireModal()">查看历史记录</button>
+    </div>
+</div>
+<div id="chatPage" class="hide">
+    <div class="header-bar">
+        <div class="model-select-wrap">
+            <span>模型：</span>
+            <select id="modelSelect">
+                <option value="qwen">Qwen3.5-Flash</option>
+                <option value="deepseek">DeepSeek</option>
+            </select>
+        </div>
+        <button onclick="openKeyModal()">更换Token</button>
+    </div>
+    <div id="history"></div>
+    <div class="input-area">
+        <textarea id="txt" placeholder="输入消息，Shift+Enter换行"></textarea>
+        <button class="btn-primary" onclick="send()">发送</button>
+        <button class="btn-danger" onclick="clearHistory()">清空</button>
+    </div>
+</div>
+<!--右下角炸弹提示，第一行文字你自行修改-->
+<div id="expireTip" class="expire-tip hide">
+    <div>自定义文字在这里改</div>
+    <div id="expireTimeLine"></div>
+</div>
+<script>
+const API_URL = "/api";
+const EXPIRE_TIMESTAMP = 1792310340000;
+let TOKEN = "";
+let chatHistory = [];
+let isSending = false;
+let loadingElement = null;
+let isExpiredLock = false;
+
+// ============独立历史相关函数============
+function getStorageKey(){
+    const sel = document.getElementById("modelSelect");
+    return "chat_log_" + sel.value;
+}
+function loadHistory(){
+    const key = getStorageKey();
+    const raw = localStorage.getItem(key);
+    chatHistory = raw ? JSON.parse(raw) : [];
+    render();
+}
+function saveHistory(){
+    const key = getStorageKey();
+    localStorage.setItem(key, JSON.stringify(chatHistory));
+}
+
+// 记住上次选择模型
+function loadSavedModel(){
+    const saved = localStorage.getItem("last_model");
+    const sel = document.getElementById("modelSelect");
+    if(saved){
+        sel.value = saved;
+    }
+}
+//切换模型自动加载历史+保存当前模型
+document.getElementById("modelSelect").onchange = function(){
+    localStorage.setItem("last_model", this.value);
+    loadHistory();
+}
+// =========================================
+function initKey() {
+    loadSavedModel(); // 加载上次模型选择
+    const saved = localStorage.getItem("product_token");
+    if(saved) {
+        TOKEN = saved;
+        enterChat();
+    } else {
+        openKeyModal();
+    }
+}
+function openKeyModal(){
+    document.getElementById("keyModal").classList.remove("hide");
+}
+function saveKey(){
+    const v = document.getElementById("keyInput").value.trim();
+    if(!v) return;
+    localStorage.setItem("product_token",v);
+    TOKEN = v;
+    enterChat();
+}
+function enterChat(){
+    document.getElementById("keyModal").classList.add("hide");
+    document.getElementById("chatPage").classList.remove("hide");
+    loadHistory();
+    checkExpireStatus();
+}
+function render() {
+    const box = document.getElementById("history");
+    box.innerHTML = "";
+    for(let item of chatHistory) {
+        const div = document.createElement("div");
+        div.className = item.type;
+        let text = item.text;
+        text = text.replace(/^user:\s*/,"");
+        text = text.replace(/^assistant:\s*/,"");
+        let htmlText = text;
+        if(item.time){
+            htmlText += `<br><span style="font-size:12px;opacity:0.7">${item.time}</span>`;
+        }
+        div.innerHTML = htmlText;
+        box.appendChild(div);
+    }
+    box.scrollTop = box.scrollHeight;
+}
+function clearHistory(){
+    chatHistory=[];saveHistory();render();
+}
+function addLoadingTip(){
+    const box = document.getElementById("history");
+    loadingElement = document.createElement("div");
+    loadingElement.className="loading-msg";
+    loadingElement.innerText="AI正在思考……";
+    box.appendChild(loadingElement);
+    box.scrollTop = box.scrollHeight;
+}
+function removeLoadingTip(){
+    if(loadingElement){loadingElement.remove();loadingElement=null;}
+}
+
+//时间炸弹函数
+function formatTs(ts){
+    const d=new Date(ts);
+    const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
+    const h=String(d.getHours()).padStart(2,"0"),mi=String(d.getMinutes()).padStart(2,"0"),s=String(d.getSeconds()).padStart(2,"0");
+    return `${y}/${m}/${day} ${h}:${mi}:${s}`;
+}
+function openExpireModal(){document.getElementById("expireModal").classList.remove("hide");}
+function closeExpireModal(){document.getElementById("expireModal").classList.add("hide");}
+function gotoDownload(){window.open("https://example.com","_blank");}
+function checkExpireStatus(){
+    if(EXPIRE_TIMESTAMP===0){document.getElementById("expireTip").classList.add("hide");return;}
+    document.getElementById("expireTip").classList.remove("hide");
+    document.getElementById("expireTimeLine").innerText="到期时间："+formatTs(EXPIRE_TIMESTAMP);
+    if(Date.now()>=EXPIRE_TIMESTAMP){
+        isExpiredLock=true;
+        const sendBtn=document.querySelector(".btn-primary[onclick='send()']");
+        sendBtn.disabled=true;sendBtn.style.opacity="0.5";
+        openExpireModal();
+    }
+}
+
+async function send(retryCount=0){
+    if(isExpiredLock) return;
+    const text = document.getElementById("txt").value.trim();
+    if(!text || isSending) return;
+    isSending = true;
+    chatHistory.push({type:"user", text:"user: "+text, time:new Date().toLocaleString('zh-CN',{hour12:false})});
+    saveHistory();
+    document.getElementById("txt").value="";
+    render();
+    addLoadingTip();
+    const modelType = document.getElementById("modelSelect").value;
+    let qStr = "【历史对话开始】\n";
+    for(let i=0;i<chatHistory.length-1;i++) qStr += chatHistory[i].text + "\n";
+    qStr += "【历史对话结束】\n【用户新提问】\n"+text;
+    try{
+        const res = await fetch(API_URL,{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({token:TOKEN,question:qStr,api_type:modelType})
+        });
+        const ansText = await res.text();
+        removeLoadingTip();
+        let j = null;
+        try{j=JSON.parse(ansText);}catch(e){}
+        if(j && j._type === "timeout"){
+            if(retryCount ===0){
+                chatHistory.push({type:"err",text:"超时，正在重试……", time:new Date().toLocaleString('zh-CN',{hour12:false})});
+                saveHistory();render();
+                await new Promise(r=>setTimeout(r,800));
+                chatHistory.pop();saveHistory();
+                await send(1);
+                return;
+            }else{
+                chatHistory.push({type:"err",text:"服务器繁忙，请稍后重试", time:new Date().toLocaleString('zh-CN',{hour12:false})});
+                saveHistory();render();
+                isSending=false;
+                return;
+            }
+        }
+        if(j && j.code ===403){
+            alert("Token错误");
+            localStorage.removeItem("product_token");
+            TOKEN="";openKeyModal();
+            isSending=false;
+            return;
+        }
+        if(ansText.includes('"error"')){
+            chatHistory.push({type:"err",text:ansText, time:new Date().toLocaleString('zh-CN',{hour12:false})});
+        }else{
+            chatHistory.push({type:"ai",text:"assistant: "+ansText, time:new Date().toLocaleString('zh-CN',{hour12:false})});
+        }
+        saveHistory();render();
+    }catch(err){
+        removeLoadingTip();
+        if(retryCount===0){
+            chatHistory.push({type:"err",text:"超时，正在重试……", time:new Date().toLocaleString('zh-CN',{hour12:false})});
+            saveHistory();render();
+            await new Promise(r=>setTimeout(r,800));
+            chatHistory.pop();saveHistory();
+            await send(1);
+            return;
+        }else{
+            chatHistory.push({type:"err",text:"服务器繁忙，请稍后重试", time:new Date().toLocaleString('zh-CN',{hour12:false})});
+            saveHistory();render();
+        }
+    }
+    isSending = false;
+}
+//快捷键：Enter发送，Shift+Enter换行
+document.getElementById("txt").onkeydown = function(e){
+    if(e.key === "Enter" && !e.shiftKey){
+        e.preventDefault();
+        send();
+    }
+}
+initKey();
+</script>
+</body>
+</html>
