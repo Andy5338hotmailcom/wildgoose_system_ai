@@ -149,8 +149,8 @@ button:hover{opacity:0.9;}
 <body>
 <div id="keyModal" class="hide">
     <div class="modal-box">
-        <h3>输入Token</h3>
-        <input id="keyInput" placeholder="粘贴token">
+        <h3>输入产品密钥</h3>
+        <input id="keyInput" placeholder="粘贴产品密钥">
         <br>
         <button class="btn-primary" onclick="saveKey()">确认</button>
     </div>
@@ -174,7 +174,7 @@ button:hover{opacity:0.9;}
                 <option value="deepseek">DeepSeek</option>
             </select>
         </div>
-        <button onclick="openKeyModal()">更换Token</button>
+        <button onclick="openKeyModal()">更换产品密钥</button>
     </div>
     <div id="history"></div>
     <div class="input-area">
@@ -348,7 +348,7 @@ async function send(retryCount=0){
             }
         }
         if(j && j.code ===403){
-            alert("Token错误");
+            alert("产品密钥错误");
             localStorage.removeItem("product_token");
             TOKEN="";openKeyModal();
             isSending=false;
