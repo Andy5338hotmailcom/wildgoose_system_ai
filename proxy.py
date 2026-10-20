@@ -2,11 +2,11 @@ from flask import Flask, request
 import requests
 import re
 import sys, os
-
 app = Flask(__name__)
-# 两个上游API，参数格式完全一致
+# 上游API
 UPSTREAM_API_QWEN = "https://yunzhiapi.cn/API/qwen3.5-flash.php"
 UPSTREAM_API_DEEPSEEK = "https://yunzhiapi.cn/API/deepseek.php"
+UPSTREAM_API_NEW_QWEN = "https://yunzhiapi.cn/API/qwen/index.php"
 # 默认先用Qwen
 DEFAULT_UPSTREAM = UPSTREAM_API_QWEN
 # 固定写死系统提示词
@@ -18,6 +18,8 @@ assistant: AI的回答
 【用户新提问】
 xxx
 你仅针对【用户新提问】回答，不要重复输出全部历史。"""
+
+NEW_MODEL_LIST = ["qwen3.7-plus", "qwen3.8-max", "qwen3.8-omni-flash"]
 
 # 获取当前运行目录，识别pyinstaller打包后的 _MEIxxxxxx 临时解压文件夹
 def get_base_path():
@@ -45,36 +47,73 @@ def index():
 # API代理路由，同时支持GET和POST
 @app.route("/api", methods=["GET","POST"])
 def api():
-    # 可以在前端传api_type参数选择模型，默认qwen
-    api_select = DEFAULT_UPSTREAM
+    token = ""
+    msg = ""
+    model = ""
+    uid = ""
+    delet = ""
+    history = ""
+
     if request.method == "POST":
         data = request.get_json() or {}
         token = data.get("token", "")
-        question = data.get("question", "")
-        api_type = data.get("api_type","qwen")
+        msg = data.get("msg", data.get("question", ""))
+        model = data.get("model", data.get("api_type", "qwen"))
+        uid = data.get("uid", "")
+        delet = data.get("delet", "")
+        history = data.get("history", "")
     else:
         token = request.args.get("token", "")
-        question = request.args.get("question", "")
-        api_type = request.args.get("api_type","qwen")
+        msg = request.args.get("msg", request.args.get("question", ""))
+        model = request.args.get("model", request.args.get("api_type", "qwen"))
+        uid = request.args.get("uid", "")
+        delet = request.args.get("delet", "")
+        history = request.args.get("history", "")
 
-    if api_type == "deepseek":
+    model_lower = model.lower()
+    # 新模型分支（uid托管，不需要后端拼接历史）
+    if model_lower in NEW_MODEL_LIST:
+        params = {
+            "token": token,
+            "mag": msg,
+            "model": model,
+            "uid": uid,
+            "think": "auto",
+            "type": "text"
+        }
+        if delet:
+            params["delet"] = delet
+        try:
+            resp = requests.post(UPSTREAM_API_NEW_QWEN, data=params, timeout=120)
+            raw_text = resp.text.strip()
+            return raw_text
+        except requests.exceptions.Timeout:
+            return '{"_type":"timeout"}'
+        except Exception as e:
+            return '{"error":"request_fail","msg":"%s"}'%str(e)
+
+    # 老模型分支：qwen3.5-flash / deepseek，沿用你原来逻辑
+    api_select = DEFAULT_UPSTREAM
+    if model_lower == "deepseek":
         api_select = UPSTREAM_API_DEEPSEEK
-    else:
+    elif model_lower == "qwen3.5-flash":
         api_select = UPSTREAM_API_QWEN
 
+    # 老模型：拼接system+历史+新消息
+    full_question = SYSTEM_PROMPT + "\n" + history + "\n【用户新提问】\n" + msg
     try:
         resp = requests.post(
             api_select,
             data={
                 "token": token,
-                "question": question,
+                "question": full_question,
                 "system": SYSTEM_PROMPT
             },
             timeout=120
         )
         raw_text = resp.text
         # 如果选deepseek，自动过滤think标签
-        if api_type == "deepseek":
+        if model_lower == "deepseek":
             raw_text = strip_think_tags(raw_text)
         return raw_text
     except requests.exceptions.Timeout:
