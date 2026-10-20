@@ -172,6 +172,9 @@ button:hover{opacity:0.9;}
             <select id="modelSelect">
                 <option value="qwen">Qwen3.5-Flash</option>
                 <option value="deepseek" selected>DeepSeek R1</option>
+                <option value="qwen3.7-plus">Qwen3.7-Plus</option>
+                <option value="qwen3.8-max">Qwen3.8-Max</option>
+                <option value="qwen3.8-omni-flash">Qwen3.8-Omni-Flash</option>
             </select>
         </div>
         <button onclick="openKeyModal()">更换产品密钥</button>
@@ -190,7 +193,7 @@ button:hover{opacity:0.9;}
 </div>
 <script>
 const API_URL = "/api";
-const EXPIRE_TIMESTAMP = 1792511999000;
+const EXPIRE_TIMESTAMP = 1792771199000;
 let TOKEN = "";
 let chatHistory = [];
 let isSending = false;
