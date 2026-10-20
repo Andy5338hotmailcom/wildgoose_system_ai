@@ -171,7 +171,7 @@ button:hover{opacity:0.9;}
             <span>模型：</span>
             <select id="modelSelect">
                 <option value="qwen">Qwen3.5-Flash</option>
-                <option value="deepseek">DeepSeek</option>
+                <option value="deepseek" selected>DeepSeek R1</option>
             </select>
         </div>
         <button onclick="openKeyModal()">更换产品密钥</button>
@@ -196,7 +196,6 @@ let chatHistory = [];
 let isSending = false;
 let loadingElement = null;
 let isExpiredLock = false;
-
 // ============独立历史相关函数============
 function getStorageKey(){
     const sel = document.getElementById("modelSelect");
@@ -212,7 +211,6 @@ function saveHistory(){
     const key = getStorageKey();
     localStorage.setItem(key, JSON.stringify(chatHistory));
 }
-
 // 记住上次选择模型
 function loadSavedModel(){
     const saved = localStorage.getItem("last_model");
@@ -285,7 +283,6 @@ function addLoadingTip(){
 function removeLoadingTip(){
     if(loadingElement){loadingElement.remove();loadingElement=null;}
 }
-
 //时间炸弹函数
 function formatTs(ts){
     const d=new Date(ts);
@@ -307,7 +304,6 @@ function checkExpireStatus(){
         openExpireModal();
     }
 }
-
 async function send(retryCount=0){
     if(isExpiredLock) return;
     const text = document.getElementById("txt").value.trim();
@@ -326,7 +322,14 @@ async function send(retryCount=0){
         const res = await fetch(API_URL,{
             method:"POST",
             headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({token:TOKEN,question:qStr,api_type:modelType})
+            body:JSON.stringify({
+                token:TOKEN,
+                question:qStr,
+                api_type:modelType,
+                msg:text,
+                model:modelType,
+                history:qStr
+            })
         });
         const ansText = await res.text();
         removeLoadingTip();
