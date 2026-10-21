@@ -18,21 +18,17 @@ assistant: AI的回答
 【用户新提问】
 xxx
 你仅针对【用户新提问】回答，不要重复输出全部历史。"""
-
 NEW_MODEL_LIST = ["qwen3.7-plus", "qwen3.8-max", "qwen3.8-omni-flash"]
 
 # 获取当前运行目录，识别pyinstaller打包后的 _MEIxxxxxx 临时解压文件夹
 def get_base_path():
     if hasattr(sys, '_MEIPASS'):
-        # 打包exe运行，sys._MEIPASS = _MEIxxxxxx文件夹路径
         return os.path.abspath(sys._MEIPASS)
     else:
-        # 直接py源码运行，当前目录
         return os.path.abspath(".")
 
 # 清除DeepSeek的 思考标签内容
 def strip_think_tags(text):
-    # 兼容 < think >、<  think  > 各种带空白的标签，大小写忽略
     pattern = re.compile(r'<\s*think\s*>[\s\S]*?</\s*think\s*>', re.IGNORECASE)
     return pattern.sub('', text).strip()
 
@@ -51,27 +47,30 @@ def api():
     msg = ""
     model = ""
     uid = ""
-    delet = ""
-    history = ""
+    action = ""
+    question = ""
 
     if request.method == "POST":
         data = request.get_json() or {}
         token = data.get("token", "")
-        msg = data.get("msg", data.get("question", ""))
-        model = data.get("model", data.get("api_type", "qwen"))
+        msg = data.get("msg", "")
+        question = data.get("question", "")
+        model = data.get("model", "qwen")
         uid = data.get("uid", "")
-        delet = data.get("delet", "")
-        history = data.get("history", "")
+        action = data.get("action", "")
     else:
         token = request.args.get("token", "")
-        msg = request.args.get("msg", request.args.get("question", ""))
-        model = request.args.get("model", request.args.get("api_type", "qwen"))
+        msg = request.args.get("msg", "")
+        question = request.args.get("question", "")
+        model = request.args.get("model", "qwen")
         uid = request.args.get("uid", "")
-        delet = request.args.get("delet", "")
-        history = request.args.get("history", "")
+        action = request.args.get("action", "")
 
+    print("==== 收到请求 ====")
+    print(f"model:{model}, uid:{uid}, msg:{msg}, action:{action}")
     model_lower = model.lower()
-    # 新模型分支（uid托管，不需要后端拼接历史）
+
+    # 新模型分支：改用GET，和文档示例一致
     if model_lower in NEW_MODEL_LIST:
         params = {
             "token": token,
@@ -81,10 +80,12 @@ def api():
             "think": "auto",
             "type": "text"
         }
-        if delet:
-            params["delet"] = delet
+        if action == "delet":
+            params["delet"] = uid
+        print("向上游GET参数：", params)
         try:
-            resp = requests.post(UPSTREAM_API_NEW_QWEN, data=params, timeout=120)
+            resp = requests.get(UPSTREAM_API_NEW_QWEN, params=params, timeout=120)
+            print(f"上游返回code:{resp.status_code}, 返回内容:{resp.text}")
             raw_text = resp.text.strip()
             return raw_text
         except requests.exceptions.Timeout:
@@ -92,15 +93,14 @@ def api():
         except Exception as e:
             return '{"error":"request_fail","msg":"%s"}'%str(e)
 
-    # 老模型分支：qwen3.5-flash / deepseek，沿用你原来逻辑
+    # 老模型分支：qwen / deepseek
     api_select = DEFAULT_UPSTREAM
     if model_lower == "deepseek":
         api_select = UPSTREAM_API_DEEPSEEK
-    elif model_lower == "qwen3.5-flash":
+    elif model_lower == "qwen":
         api_select = UPSTREAM_API_QWEN
 
-    # 老模型：拼接system+历史+新消息
-    full_question = SYSTEM_PROMPT + "\n" + history + "\n【用户新提问】\n" + msg
+    full_question = SYSTEM_PROMPT + "\n" + question
     try:
         resp = requests.post(
             api_select,
@@ -112,18 +112,15 @@ def api():
             timeout=120
         )
         raw_text = resp.text
-        # 如果选deepseek，自动过滤think标签
         if model_lower == "deepseek":
             raw_text = strip_think_tags(raw_text)
         return raw_text
     except requests.exceptions.Timeout:
-        # 超时，返回自定义标记
         return '{"_type":"timeout"}'
     except Exception as e:
         return '{"error":"request_fail","msg":"%s"}'%str(e)
 
 if __name__ == "__main__":
-    # 0.0.0.0 允许局域网其他设备/虚拟机访问
-    print("Wildgoose AI test software.Testing only.")
-    print("Testing Url:127.0.0.1:5051")
+    print("Wildgoose AI test software. Testing only.")
+    print("Testing Url: http://127.0.0.1:5051")
     app.run(host="0.0.0.0", port=5051, debug=False)
