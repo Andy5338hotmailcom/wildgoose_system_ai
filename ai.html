@@ -199,6 +199,20 @@ let chatHistory = [];
 let isSending = false;
 let loadingElement = null;
 let isExpiredLock = false;
+
+// 生成6位数字uid
+function make6Uid(){
+    let s = '';
+    for(let i=0;i<6;i++){
+        s += Math.floor(Math.random()*10);
+    }
+    return s;
+}
+let uid = make6Uid();
+
+// uid托管会话模型列表（内部使用，用户看不见）
+const uidSessionModels = ["qwen3.7-plus", "qwen3.8-max", "qwen3.8-omni-flash"];
+
 // ============独立历史相关函数============
 function getStorageKey(){
     const sel = document.getElementById("modelSelect");
@@ -213,6 +227,15 @@ function loadHistory(){
 function saveHistory(){
     const key = getStorageKey();
     localStorage.setItem(key, JSON.stringify(chatHistory));
+}
+// 构建老接口的拼接历史文本
+function buildHistoryText(){
+    let lines = ["【历史对话开始】"];
+    for(let item of chatHistory){
+        lines.push(item.text);
+    }
+    lines.push("【历史对话结束】");
+    return lines.join("\n");
 }
 // 记住上次选择模型
 function loadSavedModel(){
@@ -229,7 +252,7 @@ document.getElementById("modelSelect").onchange = function(){
 }
 // =========================================
 function initKey() {
-    loadSavedModel(); // 加载上次模型选择
+    loadSavedModel();
     const saved = localStorage.getItem("product_token");
     if(saved) {
         TOKEN = saved;
@@ -272,8 +295,31 @@ function render() {
     }
     box.scrollTop = box.scrollHeight;
 }
-function clearHistory(){
-    chatHistory=[];saveHistory();render();
+// 清空：分支判断
+async function clearHistory(){
+    if(isSending) return;
+    const modelType = document.getElementById("modelSelect").value;
+    const useUidSession = uidSessionModels.includes(modelType);
+    if(useUidSession){
+        try{
+            await fetch(API_URL,{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({
+                    token:TOKEN,
+                    uid: uid,
+                    action: "delet"
+                })
+            })
+        }catch(e){
+            console.log("删除会话通知失败",e);
+        }
+        uid = make6Uid();
+    }
+    // 无论新旧模型，都清空本地记录
+    chatHistory=[];
+    saveHistory();
+    render();
 }
 function addLoadingTip(){
     const box = document.getElementById("history");
@@ -318,21 +364,30 @@ async function send(retryCount=0){
     render();
     addLoadingTip();
     const modelType = document.getElementById("modelSelect").value;
-    let qStr = "【历史对话开始】\n";
-    for(let i=0;i<chatHistory.length-1;i++) qStr += chatHistory[i].text + "\n";
-    qStr += "【历史对话结束】\n【用户新提问】\n"+text;
+    const useUidSession = uidSessionModels.includes(modelType);
+    let payload;
+    if(useUidSession){
+        payload = {
+            token:TOKEN,
+            msg:text,
+            model:modelType,
+            uid: uid,
+            action: ""
+        }
+    }else{
+        let historyText = buildHistoryText();
+        payload = {
+            token:TOKEN,
+            question: historyText + "\n【用户新提问】\n" + text,
+            model:modelType,
+            action: ""
+        }
+    }
     try{
         const res = await fetch(API_URL,{
             method:"POST",
             headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({
-                token:TOKEN,
-                question:qStr,
-                api_type:modelType,
-                msg:text,
-                model:modelType,
-                history:qStr
-            })
+            body:JSON.stringify(payload)
         });
         const ansText = await res.text();
         removeLoadingTip();
